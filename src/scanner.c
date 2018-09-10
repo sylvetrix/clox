@@ -209,7 +209,7 @@ static Token identifier()
 
 static Token number()
 {
-	while (!isDigit(peek()))
+	while (isDigit(peek()))
 	{
 		advance();
 	}
