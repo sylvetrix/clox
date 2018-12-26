@@ -24,17 +24,53 @@ void freeTable(Table* table)
 static Entry* findEntry(Entry* entries, int capacity, ObjString* key)
 {
 	uint32_t index = key->hash % capacity;
+	Entry* tombstone = NULL;
+
 	for (;;)
 	{
 		Entry* entry = &entries[index];
 
-		if (entry->key == key || entry->key == NULL)
+		if (entry->key == NULL)
 		{
+			if (IS_NIL(entry->value))
+			{
+				// empty entry
+				return tombstone != NULL ? tombstone : entry;
+			}
+			else
+			{
+				// found a tombstone
+				if (tombstone == NULL)
+				{
+					tombstone = entry;
+				}
+			}
+		}
+		else if (entry->key == key)
+		{
+			// found the key
 			return entry;
 		}
 
 		index = (index + 1) % capacity;
 	}
+}
+
+bool tableGet(Table* table, ObjString* key, Value* value)
+{
+	if (table->entries == NULL)
+	{
+		return false;
+	}
+
+	Entry* entry = findEntry(table->entries, table->capacity, key);
+	if (entry->key == NULL)
+	{
+		return false;
+	}
+
+	*value = entry->value;
+	return true;
 }
 
 static void adjustCapacity(Table* table, int capacity)
@@ -46,6 +82,7 @@ static void adjustCapacity(Table* table, int capacity)
 		entries[i].value = NIL_VAL;
 	}
 
+	table->count = 0;
 	for (int i = 0; i < table->capacity; i++)
 	{
 		Entry* entry = &table->entries[i];
@@ -57,6 +94,7 @@ static void adjustCapacity(Table* table, int capacity)
 		Entry* dest = findEntry(entries, capacity, entry->key);
 		dest->key = entry->key;
 		dest->value = entry->value;
+		table->count++;
 	}
 
 	FREE_ARRAY(Entry, table->entries, table->capacity);
@@ -85,6 +123,27 @@ bool tableSet(Table* table, ObjString* key, Value value)
 	return isNewKey;
 }
 
+bool tableDelete(Table* table, ObjString* key)
+{
+	if (table->count == 0)
+	{
+		return false;
+	}
+
+	// find the entry
+	Entry* entry = findEntry(table->entries, table->capacity, key);
+	if (entry->key == NULL)
+	{
+		return false;
+	}
+
+	// place a tombstone in the entry
+	entry->key = NULL;
+	entry->value = BOOL_VAL(true);
+
+	return true;
+}
+
 void tableAddAll(Table* from, Table* to)
 {
 	for (int i = 0; i < from->capacity; i++)
@@ -96,3 +155,30 @@ void tableAddAll(Table* from, Table* to)
 		}
 	}
 }
+
+ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t hash)
+{
+	if (table->entries == NULL)
+	{
+		return NULL;
+	}
+
+	uint32_t index = hash % table->capacity;
+
+	for (;;)
+	{
+		Entry* entry = &table->entries[index];
+
+		if (entry->key == NULL)
+		{
+			return NULL;
+		}
+		if ((entry->key->length == length) && (memcmp(entry->key->chars, chars, length) == 0))
+		{
+			return entry->key;
+		}
+
+		index = (index + 1) % table->capacity;
+	}
+}
+
